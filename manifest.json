@@ -1,0 +1,10 @@
+{
+  "domain": "scream_router",
+  "name": "Scream Router Sink Playback",
+  "codeowners": ["netham45"],
+  "config_flow": true,
+  "documentation": "https://www.github.com/netham45/screamrouter",
+  "iot_class": "local_polling",
+  "loggers": [],
+  "requirements": []
+}
