@@ -1,4 +1,4 @@
-"""Config flow for ScreamRouter integration."""
+"""Config flow for VLC media player Telnet integration."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ import voluptuous as vol
 
 from homeassistant.components.hassio import HassioServiceInfo
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from homeassistant.const import CONF_URL, CONF_NAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DEFAULT_PORT, DOMAIN
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,15 +24,12 @@ def user_form_schema(user_input: dict[str, Any] | None) -> vol.Schema:
     user_input = user_input or {}
     return vol.Schema(
         {
-            vol.Required(CONF_HOST): str,
-            vol.Optional(
-                CONF_PORT, default=user_input.get(CONF_PORT, DEFAULT_PORT)
-            ): int,
+            vol.Required(CONF_URL, description="URL for ScreamRouter"): str
         }
     )
 
 
-STEP_REAUTH_DATA_SCHEMA = vol.Schema({vol.Required(CONF_HOST): str})
+STEP_REAUTH_DATA_SCHEMA = vol.Schema({vol.Required(CONF_URL): str})
 
 
 async def scream_connect(scream_router_info: dict) -> None:
@@ -42,8 +39,7 @@ async def scream_connect(scream_router_info: dict) -> None:
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, str]:
     """Validate the user input allows us to connect."""
     scream_router_info: dict = {
-        "host": data[CONF_HOST],
-        "port": data[CONF_PORT],
+        "url": data[CONF_URL],
     }
 
     try:
@@ -56,7 +52,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     #    raise InvalidAuth from err
 
     # CONF_NAME is only present in the imported YAML data.
-    return {"title": data.get(CONF_NAME) or data[CONF_HOST]}
+    return {"title": data[CONF_URL]}
 
 
 class ScreamRouterConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -76,7 +72,7 @@ class ScreamRouterConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         self._async_abort_entries_match(
-            {CONF_HOST: user_input[CONF_HOST], CONF_PORT: user_input[CONF_PORT]}
+            {CONF_URL: user_input[CONF_URL]}
         )
 
         errors = {}
@@ -103,7 +99,7 @@ class ScreamRouterConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle reauth flow."""
         self.entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         assert self.entry
-        self.context["title_placeholders"] = {"host": self.entry.data[CONF_HOST]}
+        self.context["title_placeholders"] = {"url": self.entry.data[CONF_URL]}
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
@@ -138,7 +134,7 @@ class ScreamRouterConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_confirm",
-            description_placeholders={CONF_HOST: self.entry.data[CONF_HOST]},
+            description_placeholders={CONF_URL: self.entry.data[CONF_URL]},
             data_schema=STEP_REAUTH_DATA_SCHEMA,
             errors=errors,
         )
@@ -151,7 +147,7 @@ class ScreamRouterConfigFlow(ConfigFlow, domain=DOMAIN):
         self._abort_if_unique_id_configured(discovery_info.config)
 
         self.hassio_discovery = discovery_info.config
-        self.context["title_placeholders"] = {"host": discovery_info.config[CONF_HOST]}
+        self.context["title_placeholders"] = {"url": discovery_info.config[CONF_URL]}
         return await self.async_step_hassio_confirm()
 
     async def async_step_hassio_confirm(

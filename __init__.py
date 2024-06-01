@@ -1,7 +1,7 @@
-"""The ScreamRouter integration."""
+"""The Scream Router integration."""
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_PORT, Platform
+from homeassistant.const import CONF_URL, Platform
 from homeassistant.core import HomeAssistant
 
 from .const import DATA_AVAILABLE, DOMAIN, LOGGER, SCREAM_ROUTER_SERVER, SINKS
@@ -11,19 +11,18 @@ PLATFORMS = [Platform.MEDIA_PLAYER]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up ScreamRouter from a config entry."""
+    """Set up Scream Router from a config entry."""
     config = entry.data
 
-    host = config[CONF_HOST]
-    port = config[CONF_PORT]
-    scream_router: ScreamRouter = ScreamRouter(host, port)
+    url = config[CONF_URL]
+    scream_router: ScreamRouter = ScreamRouter(url)
     LOGGER.warning(hass.data)
     available = True
     try:
         sinks: dict = await scream_router.get_sinks()
         LOGGER.warning(sinks)
-    except Exception:
-        LOGGER.warning("Failed to query Scream Router")
+    except Exception as exc:
+        LOGGER.warning("Failed to query Scream Router %s", exc)
         available = False
         return available
 
@@ -45,6 +44,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if unload_ok:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id)
+    # vlc = entry_data[SINKS]
+
+    # await disconnect_vlc(vlc)
 
     return unload_ok
 

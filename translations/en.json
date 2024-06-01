@@ -12,20 +12,17 @@
             "invalid_auth": "Invalid authentication",
             "unknown": "Unexpected error"
         },
-        "flow_title": "{host}",
+        "flow_title": "{url}",
         "step": {
             "hassio_confirm": {
                 "description": "Do you want to connect to add-on {addon}?"
             },
             "user": {
                 "data": {
-                    "host": "Host",
-                    "name": "Name",
-                    "password": "Password",
-                    "port": "Port"
+                    "url": "URL of ScreamRouter"
                 },
                 "data_description": {
-                    "host": "Hostname or IP address of your Scream Router."
+                    "URL": "URL of ScreamRouter"
                 }
             }
         }

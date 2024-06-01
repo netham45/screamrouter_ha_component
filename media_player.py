@@ -1,4 +1,4 @@
-"""Provide functionality to interact with the ScreamRouter interface."""
+"""Provide functionality to interact with the vlc telnet interface."""
 
 from __future__ import annotations
 
@@ -6,6 +6,9 @@ from collections.abc import Awaitable, Callable, Coroutine
 from functools import wraps
 import hashlib
 from typing import Any, Concatenate, List, ParamSpec, TypeVar
+
+from aiovlc.client import Client
+from aiovlc.exceptions import AuthError, CommandError, ConnectError
 
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
@@ -86,7 +89,7 @@ class ScreamRouterDevice(MediaPlayerEntity):
         name: str,
         available: bool,
     ) -> None:
-        """Initialize the ScreamRouter device."""
+        """Initialize the vlc device."""
         self._config_entry = config_entry
         config_entry_id = entry_id
         self._scream_router = scream_router

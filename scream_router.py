@@ -9,19 +9,17 @@ from .const import LOGGER
 class ScreamRouter:
     """Talks to a ScreamRouter."""
 
-    def __init__(self, host: str, port: int) -> None:
+    def __init__(self, url: str) -> None:
         """Initialize the config."""
-        self.host: str = host
-        """Host to connect to."""
-        self.port: int = port
-        """Port to connect to."""
+        self.url: str = url
+        """URL to connect to."""
 
     async def __call_api(
         self, endpoint: str, method: str, body_json: dict | None = None
     ) -> dict:
         """ScreamRouter API object."""
-        url: str = f"http://{self.host}:{self.port}{endpoint}"
-        async with aiohttp.ClientSession() as session:
+        url: str = f"{self.url}{endpoint}"
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
             if method == "GET":
                 async with session.get(url) as resp:
                     return json.loads(await resp.text())
@@ -35,7 +33,7 @@ class ScreamRouter:
 
     async def get_sinks(self) -> dict:
         """Get a parsed block of JSON representing the sinks."""
-        return await self.__call_api("/sinks/", "GET")
+        return await self.__call_api("/sinks", "GET")
 
     async def change_sink_volume(self, sink_name: str, volume: float) -> None:
         """Change a sink indicated by sink_name to the specified volume."""
