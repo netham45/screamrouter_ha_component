@@ -1,4 +1,4 @@
-"""Provide functionality to interact with the vlc telnet interface."""
+"""Provide functionality to interact with ScreamRouter"""
 
 from __future__ import annotations
 
@@ -6,9 +6,6 @@ from collections.abc import Awaitable, Callable, Coroutine
 from functools import wraps
 import hashlib
 from typing import Any, Concatenate, List, ParamSpec, TypeVar
-
-from aiovlc.client import Client
-from aiovlc.exceptions import AuthError, CommandError, ConnectError
 
 from homeassistant.components import media_source
 from homeassistant.components.media_player import (
@@ -33,6 +30,8 @@ from .const import (
     LOGGER,
     SCREAM_ROUTER_SERVER,
     SINKS,
+    SOURCES,
+    ROUTES
 )
 from .scream_router import ScreamRouter
 
@@ -48,23 +47,44 @@ async def async_setup_entry(
     # CONF_NAME is only present in imported YAML.
     name = entry.data.get(CONF_NAME) or DEFAULT_NAME
     sinks = hass.data[DOMAIN][entry.entry_id][SINKS]
+    sources = hass.data[DOMAIN][entry.entry_id][SOURCES]
+    routes = hass.data[DOMAIN][entry.entry_id][ROUTES]
     scream_router: ScreamRouter = hass.data[DOMAIN][entry.entry_id][
         SCREAM_ROUTER_SERVER
     ]
     available = hass.data[DOMAIN][entry.entry_id][DATA_AVAILABLE]
-    scream_router_devices: list[ScreamRouterDevice] = []
+    scream_router_devices: list[ScreamRouterSinkDevice] = []
+
     for sink in sinks:
         entry_id = f"{sink['name']}{sink['ip']}"
         scream_router_devices.append(
-            ScreamRouterDevice(
+            ScreamRouterSinkDevice(
                 entry, entry_id, scream_router, f"{sink['name']}", available
+            )
+        )
+
+    for source in sources:
+        entry_id = f"{source['name']}{source['ip']}"
+        scream_router_devices.append(
+            ScreamRouterSourceDevice(
+                entry, entry_id, scream_router, f"{source['name']}", available
+            )
+        )
+    if len(scream_router_devices) > 0:
+        async_add_entities(scream_router_devices, True)
+
+    for route in routes:
+        entry_id = f"{route['name']}{route['ip']}"
+        scream_router_devices.append(
+            ScreamRouterRouteDevice(
+                entry, entry_id, scream_router, f"{route['name']}", available
             )
         )
     if len(scream_router_devices) > 0:
         async_add_entities(scream_router_devices, True)
 
 
-class ScreamRouterDevice(MediaPlayerEntity):
+class ScreamRouterSinkDevice(MediaPlayerEntity):
     """Representation of a ScreamRouter Sink."""
 
     _attr_has_entity_name = True
@@ -89,7 +109,7 @@ class ScreamRouterDevice(MediaPlayerEntity):
         name: str,
         available: bool,
     ) -> None:
-        """Initialize the vlc device."""
+        """Initialize the ScreamRouter Sink device."""
         self._config_entry = config_entry
         config_entry_id = entry_id
         self._scream_router = scream_router
@@ -186,3 +206,191 @@ class ScreamRouterDevice(MediaPlayerEntity):
     ) -> BrowseMedia:
         """Implement the websocket media browsing helper."""
         return await media_source.async_browse_media(self.hass, media_content_id)
+
+
+class ScreamRouterSourceDevice(MediaPlayerEntity):
+    """Representation of a ScreamRouter Source."""
+
+    _attr_has_entity_name = True
+    _attr_name = None
+    _attr_media_content_type = MediaType.MUSIC
+    _attr_supported_features = (
+          MediaPlayerEntityFeature.PLAY
+        | MediaPlayerEntityFeature.STOP
+        | MediaPlayerEntityFeature.VOLUME_MUTE
+        | MediaPlayerEntityFeature.VOLUME_SET
+    )
+    _volume_bkp: float = 0.0
+
+    def __init__(
+        self,
+        config_entry: ConfigEntry,
+        entry_id: str,
+        scream_sourcer: ScreamRouter,
+        name: str,
+        available: bool,
+    ) -> None:
+        """Initialize the ScreamRouter Source device."""
+        self._config_entry = config_entry
+        config_entry_id = entry_id
+        self._scream_sourcer = scream_sourcer
+        self._attr_available = available
+        self._attr_unique_id = config_entry_id
+        self._attr_device_info = DeviceInfo(
+            entry_type=DeviceEntryType.SERVICE,
+            identifiers={(DOMAIN, config_entry_id)},
+            manufacturer="ScreamRouter",
+            name=name,
+        )
+        self.name = name
+        self._using_addon = config_entry.source == SOURCE_HASSIO
+
+    async def async_update(self) -> None:
+        """Get the latest details from the device."""
+        if not self.available:
+            return
+
+        self._attr_state = MediaPlayerState.IDLE
+        self._attr_available = True
+
+        status = await self._scream_sourcer.get_sources()
+        for source in status:
+            if source["name"] == self.name:
+                LOGGER.debug("Status: %s", source)
+
+                self._attr_volume_level = source["volume"] / MAX_VOLUME
+                if source["enabled"]:
+                    self._attr_state = MediaPlayerState.PLAYING
+                else:
+                    self._attr_state = MediaPlayerState.IDLE
+
+    async def async_mute_volume(self, mute: bool) -> None:
+        """Mute the volume."""
+        assert self._attr_volume_level is not None
+        if mute:
+            self._volume_bkp = self._attr_volume_level
+            await self.async_set_volume_level(0)
+        else:
+            await self.async_set_volume_level(self._volume_bkp)
+
+        self._attr_is_volume_muted = mute
+
+    async def async_set_volume_level(self, volume: float) -> None:
+        """Set volume level, range 0..1."""
+        await self._scream_sourcer.change_source_volume(
+            f"{self.name}", volume * MAX_VOLUME
+        )
+        self._attr_volume_level = volume
+
+        if self.is_volume_muted and self.volume_level > 0:
+            # This can happen if we were muted and then see a volume_up.
+            self._attr_is_volume_muted = False
+
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        await self._scream_sourcer.enable_source(f"{self.name}")
+        self._attr_state = MediaPlayerState.PLAYING
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        await self._scream_sourcer.disable_source(f"{self.name}")
+        self._attr_state = MediaPlayerState.IDLE
+
+    async def async_media_stop(self) -> None:
+        """Send stop command."""
+        await self._scream_sourcer.disable_source(f"{self.name}")
+        self._attr_state = MediaPlayerState.IDLE
+
+
+class ScreamRouterRouteDevice(MediaPlayerEntity):
+    """Representation of a ScreamRouter Route."""
+
+    _attr_has_entity_name = True
+    _attr_name = None
+    _attr_media_content_type = MediaType.MUSIC
+    _attr_supported_features = (
+          MediaPlayerEntityFeature.PLAY
+        | MediaPlayerEntityFeature.STOP
+        | MediaPlayerEntityFeature.VOLUME_MUTE
+        | MediaPlayerEntityFeature.VOLUME_SET
+    )
+    _volume_bkp: float = 0.0
+
+    def __init__(
+        self,
+        config_entry: ConfigEntry,
+        entry_id: str,
+        scream_router: ScreamRouter,
+        name: str,
+        available: bool,
+    ) -> None:
+        """Initialize the ScreamRouter Route device."""
+        self._config_entry = config_entry
+        config_entry_id = entry_id
+        self._scream_router = scream_router
+        self._attr_available = available
+        self._attr_unique_id = config_entry_id
+        self._attr_device_info = DeviceInfo(
+            entry_type=DeviceEntryType.SERVICE,
+            identifiers={(DOMAIN, config_entry_id)},
+            manufacturer="ScreamRouter",
+            name=name,
+        )
+        self.name = name
+        self._using_addon = config_entry.source == SOURCE_HASSIO
+
+    async def async_update(self) -> None:
+        """Get the latest details from the device."""
+        if not self.available:
+            return
+
+        self._attr_state = MediaPlayerState.IDLE
+        self._attr_available = True
+
+        status = await self._scream_router.get_routes()
+        for route in status:
+            if route["name"] == self.name:
+                LOGGER.debug("Status: %s", route)
+
+                self._attr_volume_level = route["volume"] / MAX_VOLUME
+                if route["enabled"]:
+                    self._attr_state = MediaPlayerState.PLAYING
+                else:
+                    self._attr_state = MediaPlayerState.IDLE
+
+    async def async_mute_volume(self, mute: bool) -> None:
+        """Mute the volume."""
+        assert self._attr_volume_level is not None
+        if mute:
+            self._volume_bkp = self._attr_volume_level
+            await self.async_set_volume_level(0)
+        else:
+            await self.async_set_volume_level(self._volume_bkp)
+
+        self._attr_is_volume_muted = mute
+
+    async def async_set_volume_level(self, volume: float) -> None:
+        """Set volume level, range 0..1."""
+        await self._scream_router.change_route_volume(
+            f"{self.name}", volume * MAX_VOLUME
+        )
+        self._attr_volume_level = volume
+
+        if self.is_volume_muted and self.volume_level > 0:
+            # This can happen if we were muted and then see a volume_up.
+            self._attr_is_volume_muted = False
+
+    async def async_media_play(self) -> None:
+        """Send play command."""
+        await self._scream_router.enable_route(f"{self.name}")
+        self._attr_state = MediaPlayerState.PLAYING
+
+    async def async_media_pause(self) -> None:
+        """Send pause command."""
+        await self._scream_router.disable_route(f"{self.name}")
+        self._attr_state = MediaPlayerState.IDLE
+
+    async def async_media_stop(self) -> None:
+        """Send stop command."""
+        await self._scream_router.disable_route(f"{self.name}")
+        self._attr_state = MediaPlayerState.IDLE
