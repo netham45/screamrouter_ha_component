@@ -1,9 +1,20 @@
 """Class to access the ScreamRouter API."""
 
+from __future__ import annotations
+
+import asyncio
 import json
+from typing import Any
 
 import aiohttp
-from .const import LOGGER
+from aiohttp import ClientError
+
+from .const import (
+    LOGGER,
+    REQUEST_RETRY_ATTEMPTS,
+    REQUEST_RETRY_BACKOFF_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+)
 
 
 class ScreamRouter:
@@ -13,33 +24,62 @@ class ScreamRouter:
         """Initialize the config."""
         self.url: str = url
         """URL to connect to."""
+        self._max_attempts: int = REQUEST_RETRY_ATTEMPTS
+        self._backoff_seconds: int = REQUEST_RETRY_BACKOFF_SECONDS
+
+    def set_base_url(self, url: str) -> None:
+        """Update the base URL used for subsequent API calls."""
+        self.url = url
 
     async def __call_api(
-        self, endpoint: str, method: str, body_json: dict | None = None
-    ) -> dict:
+        self,
+        endpoint: str,
+        method: str,
+        body_json: dict[str, Any] | None = None,
+    ) -> dict | list[Any]:
         """ScreamRouter API object."""
         url: str = f"{self.url}{endpoint}"
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False)) as http:
-            if method == "GET":
-                async with http.get(url) as resp:
-                    return json.loads(await resp.text())
-            if method == "POST":
-                async with http.post(url, json=body_json) as resp:
-                    return json.loads(await resp.text())
-            if method == "PUT":
-                async with http.put(url, json=body_json) as resp:
-                    return json.loads(await resp.text())
-        return {}
+        last_exception: Exception | None = None
 
-    async def get_sinks(self) -> dict:
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                async with aiohttp.ClientSession(
+                    connector=aiohttp.TCPConnector(verify_ssl=False),
+                    timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+                ) as http:
+                    async with http.request(method, url, json=body_json) as resp:
+                        resp.raise_for_status()
+                        if resp.content_length == 0:
+                            return {}
+                        content_type = resp.headers.get("Content-Type", "").lower()
+                        if content_type.startswith("application/json"):
+                            return await resp.json(content_type=None)
+                        return json.loads(await resp.text())
+            except (ClientError, asyncio.TimeoutError, json.JSONDecodeError) as exc:
+                last_exception = exc
+                LOGGER.warning(
+                    "Attempt %s/%s calling %s failed: %s",
+                    attempt,
+                    self._max_attempts,
+                    url,
+                    exc,
+                )
+                if attempt == self._max_attempts:
+                    break
+                await asyncio.sleep(self._backoff_seconds * attempt)
+
+        assert last_exception is not None
+        raise last_exception
+
+    async def get_sinks(self) -> dict | list[Any]:
         """Get a parsed block of JSON representing the sinks."""
         return await self.__call_api("/sinks", "GET")
 
-    async def get_sources(self) -> dict:
+    async def get_sources(self) -> dict | list[Any]:
         """Get a parsed block of JSON representing the sources."""
         return await self.__call_api("/sources", "GET")
 
-    async def get_routes(self) -> dict:
+    async def get_routes(self) -> dict | list[Any]:
         """Get a parsed block of JSON representing the routes."""
         return await self.__call_api("/routes", "GET")
 

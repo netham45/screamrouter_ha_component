@@ -10,10 +10,12 @@
       },
       "user": {
         "data": {
-          "url": "[%key:common::config_flow::data::url%]"
+          "url": "[%key:common::config_flow::data::url%]",
+          "discovered_server": "Discovered ScreamRouter"
         },
         "data_description": {
-          "url": "URL of ScreamRouter"
+          "url": "URL of ScreamRouter (required when choosing manual entry)",
+          "discovered_server": "Detected ScreamRouter devices on the local network or choose manual entry"
         }
       },
       "hassio_confirm": {
@@ -30,7 +32,9 @@
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "no_server_selected": "Select a discovered server or enter a URL",
+      "manual_url_required": "Enter a URL when choosing manual entry"
     }
   }
 }

@@ -10,7 +10,9 @@
         "error": {
             "cannot_connect": "Failed to connect",
             "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
+            "unknown": "Unexpected error",
+            "no_server_selected": "Select a discovered server or enter a URL",
+            "manual_url_required": "Enter a URL when choosing manual entry"
         },
         "flow_title": "{url}",
         "step": {
@@ -19,10 +21,12 @@
             },
             "user": {
                 "data": {
-                    "url": "URL of ScreamRouter"
+                    "url": "URL of ScreamRouter",
+                    "discovered_server": "Discovered ScreamRouter"
                 },
                 "data_description": {
-                    "URL": "URL of ScreamRouter"
+                    "URL": "URL of ScreamRouter",
+                    "discovered_server": "Detected ScreamRouter devices on the local network or choose manual entry"
                 }
             }
         }
