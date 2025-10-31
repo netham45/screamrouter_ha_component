@@ -9,7 +9,6 @@
   "requirements": [],
   "version": "1.0.0",
   "zeroconf": [
-    "_screamrouter._tcp.local.",
-    "_screamrouter._tcp."
+    "_screamrouter._tcp.local."
   ]
 }
